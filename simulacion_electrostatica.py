@@ -51,13 +51,13 @@ if hasattr(sys.stdout, 'reconfigure'):
 # PARÁMETROS GLOBALES
 # ═══════════════════════════════════════════════════════════════
 K_E        = 1.0          # Constante de Coulomb (unidades naturales)
-L          = 5.0          # Semilado del dominio → dominio = [-L, L]²
+L          = 100.0        # Semilado del dominio → dominio = [-L, L]²
 DOMAIN     = (-L, L)      # Tupla del dominio
-DELTA      = 0.3          # Desplazamiento máximo por iteración [u.a.]
+DELTA      = 5.0          # Desplazamiento máximo por iteración [u.a.]
 N_ITER_DEF = 30_000       # Iteraciones por defecto
-GRID_SIZE  = 120          # Resolución de malla para visualización
+GRID_SIZE  = 200          # Resolución de malla para visualización (200×200)
 MAX_CARGAS = 200          # Máximo de cargas simultáneas
-EPS        = 0.05         # Radio de regularización (evita singularidades en malla)
+EPS        = 0.5          # Radio de regularización (evita singularidades en malla)
 OUT_DIR       = Path(__file__).parent / 'resultados'   # carpeta de salida
 GIF_POS       = str(OUT_DIR / 'video_posiciones.gif')  # GIF: posiciones de cargas
 GIF_V         = str(OUT_DIR / 'video_potencial.gif')   # GIF: mapa de calor V(x,y)
@@ -82,17 +82,17 @@ def _limpiar_archivos_anteriores() -> None:
 # Cargas opuestas se atraen hasta "tocarse" (d → R_MIN).
 # Cargas iguales se repelen: la energía crece al acercarse,
 # pero la restricción de volumen duro impide que se superpongan.
-R_CARGA     = 0.20          # Radio fisico de cada carga [u.a.]
-R_MIN       = 2 * R_CARGA   # Distancia minima centro-centro = 0.40 [u.a.]
-R_DIBUJO_PNG = 0.10          # Radio de dibujo en figuras PNG (más legible)
+R_CARGA      = 3.0           # Radio fisico de cada carga [u.a.]
+R_MIN        = 2 * R_CARGA   # Distancia minima centro-centro = 6.0 [u.a.]
+R_DIBUJO_PNG = 1.5           # Radio de dibujo unificado en todas las figuras
 
 # ── Coordenadas fijas de presentación: 25(+) + 25(−) ──────────────────────
-# Positivas: grid 5×5 en cluster izquierdo  x ∈ [-4.5, -1.5]
-# Negativas: grid 5×5 en cluster derecho    x ∈ [ 1.5,  4.5]
-# Separación intra-cluster: 0.75 u.a. > R_MIN = 0.40  ✓
-_XS_POS = np.array([-4.50, -3.75, -3.00, -2.25, -1.50])
-_XS_NEG = np.array([ 1.50,  2.25,  3.00,  3.75,  4.50])
-_YS_FIJ = np.array([-1.50, -0.75,  0.00,  0.75,  1.50])
+# Positivas: grid 5×5 en cluster izquierdo  x ∈ [-90, -30]
+# Negativas: grid 5×5 en cluster derecho    x ∈ [ 30,  90]
+# Separación intra-cluster: 15.0 u.a. > R_MIN = 6.0  ✓
+_XS_POS = np.array([-90.0, -75.0, -60.0, -45.0, -30.0])
+_XS_NEG = np.array([ 30.0,  45.0,  60.0,  75.0,  90.0])
+_YS_FIJ = np.array([-30.0, -15.0,   0.0,  15.0,  30.0])
 
 POS_FIJAS = np.array(
     [(x, y) for x in _XS_POS for y in _YS_FIJ] +
@@ -621,12 +621,12 @@ def _dibujar_cargas(ax, posiciones: np.ndarray, cargas: np.ndarray,
 
 def _plano_cartesiano_gif(ax) -> None:
     """
-    Agrega ejes cartesianos (x=0, y=0) y cuadrícula por unidad a un frame de GIF.
+    Agrega ejes cartesianos (x=0, y=0) y cuadrícula cada 20 u. a un frame de GIF.
     Ejes principales en azul claro; cuadrícula fina en azul oscuro.
     """
     ax.axhline(0, color='#5599cc', lw=0.9, alpha=0.7, zorder=2)
     ax.axvline(0, color='#5599cc', lw=0.9, alpha=0.7, zorder=2)
-    ticks = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1)
+    ticks = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1, 20)
     ax.set_xticks(ticks)
     ax.set_yticks(ticks)
     ax.tick_params(colors='#aaaaaa', labelsize=6)
@@ -636,14 +636,14 @@ def _plano_cartesiano_gif(ax) -> None:
 def _plano_cartesiano_png(ax) -> None:
     """
     Plano cartesiano profesional para figuras PNG estáticas.
-    Ejes x=0/y=0 resaltados, grid principal por unidad, grid menor cada 0.5 u.
+    Ejes x=0/y=0 resaltados, grid principal cada 20 u., grid menor cada 10 u.
     """
     ax.axhline(0, color='#7ab8e8', lw=1.2, alpha=0.85, zorder=2)
     ax.axvline(0, color='#7ab8e8', lw=1.2, alpha=0.85, zorder=2)
-    ticks_may = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1)
+    ticks_may = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1, 20)
     ax.set_xticks(ticks_may)
     ax.set_yticks(ticks_may)
-    ticks_men = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1, 0.5)
+    ticks_men = np.arange(int(DOMAIN[0]), int(DOMAIN[1]) + 1, 10)
     ax.set_xticks(ticks_men, minor=True)
     ax.set_yticks(ticks_men, minor=True)
     ax.tick_params(axis='both', which='major', colors='#bbbbbb', labelsize=9, length=4)
@@ -689,7 +689,7 @@ def _frame_pos(posiciones: np.ndarray, cargas: np.ndarray,
     ax = fig.add_subplot(111)
     ax.set_facecolor('#0d1b2a')
 
-    _dibujar_cargas(ax, posiciones, cargas)
+    _dibujar_cargas(ax, posiciones, cargas, radio=R_DIBUJO_PNG)
 
     _plano_cartesiano_gif(ax)
     ax.set_xlim(DOMAIN); ax.set_ylim(DOMAIN)
@@ -722,11 +722,11 @@ def _frame_potencial(posiciones: np.ndarray, cargas: np.ndarray,
     ax = fig.add_subplot(111)
     ax.set_facecolor('#0d1b2a')
 
-    ax.imshow(np.clip(V, -15, 15),
+    ax.imshow(np.clip(V, -5, 5),
               extent=[DOMAIN[0], DOMAIN[1], DOMAIN[0], DOMAIN[1]],
-              origin='lower', cmap='RdBu_r', vmin=-15, vmax=15,
+              origin='lower', cmap='RdBu_r', vmin=-5, vmax=5,
               aspect='equal', interpolation='bilinear')
-    _dibujar_cargas(ax, posiciones, cargas)
+    _dibujar_cargas(ax, posiciones, cargas, radio=R_DIBUJO_PNG)
 
     _plano_cartesiano_gif(ax)
     ax.set_xlim(DOMAIN); ax.set_ylim(DOMAIN)
@@ -772,7 +772,7 @@ def _frame_campo(posiciones: np.ndarray, cargas: np.ndarray,
               Ey[::sk, ::sk] / En[::sk, ::sk],
               color='white', alpha=0.42, scale=52, width=0.004)
 
-    _dibujar_cargas(ax, posiciones, cargas)
+    _dibujar_cargas(ax, posiciones, cargas, radio=R_DIBUJO_PNG)
 
     _plano_cartesiano_gif(ax)
     ax.set_xlim(DOMAIN); ax.set_ylim(DOMAIN)
@@ -1012,7 +1012,7 @@ def visualizar_estado_completo(sistema: SistemaCargas,
     _estilo(ax2, 'Potencial Electrico  V(x, y)')
 
     V      = calcular_potencial(X, Y, pos, q)
-    V_clip = np.clip(V, -20, 20)
+    V_clip = np.clip(V, -5, 5)
     cf2    = ax2.contourf(X, Y, V_clip, levels=60, cmap='RdBu_r', alpha=0.93)
     ax2.contour(X, Y, V_clip, levels=12, colors='white', alpha=0.10, linewidths=0.3)
     _colorbar(fig, cf2, ax2, 'V [u.a.]')
@@ -1277,7 +1277,7 @@ def visualizar_analisis_avanzado(sistema: SistemaCargas,
     y1  = np.linspace(DOMAIN[0], DOMAIN[1], GRID_SIZE)
     X, Y = np.meshgrid(x1, y1)
     V_fin = calcular_potencial(X, Y, pos, q)
-    cf3   = ax3.contourf(X, Y, np.clip(V_fin, -20, 20),
+    cf3   = ax3.contourf(X, Y, np.clip(V_fin, -5, 5),
                           levels=60, cmap='RdBu_r', alpha=0.88)
     _colorbar(fig, cf3, ax3, 'V [u.a.]')
 
@@ -1364,8 +1364,8 @@ def configurar_sistema_inicial() -> 'SistemaCargas':
     print(f"\n  {'═'*52}")
     print("  SISTEMA DE PRESENTACION (coordenadas fijas)")
     print(f"  {'═'*52}")
-    print(f"  {sistema.n_pos} cargas (+1) · cluster izquierdo  x ∈ [-4.5, -1.5]")
-    print(f"  {sistema.n_neg} cargas (−1) · cluster derecho   x ∈ [ 1.5,  4.5]")
+    print(f"  {sistema.n_pos} cargas (+1) · cluster izquierdo  x ∈ [-90, -30]")
+    print(f"  {sistema.n_neg} cargas (−1) · cluster derecho   x ∈ [ 30,  90]")
     print(f"  Total: {sistema.N} cargas  |  U inicial = {sistema.energia:+.4f} u.a.")
     print(f"  {'═'*52}")
     return sistema
@@ -1468,7 +1468,7 @@ def main() -> None:
     print("  SIMULACION DE ENERGIA ELECTROSTATICA 2D")
     print("  Proyecto Electricidad y Magnetismo — Fisica III")
     print(f"  Algoritmo: Monte Carlo Greedy | k={K_E} | T=0 K")
-    print(f"  Dominio [-{L},{L}]^2 | 25(+) + 25(−) = 50 cargas | delta={DELTA}")
+    print(f"  Dominio [-{int(L)},{int(L)}]^2 | 25(+) + 25(-) = 50 cargas | delta={DELTA}")
     print("═"*56)
 
     sistema   = configurar_sistema_inicial()
