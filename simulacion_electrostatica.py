@@ -21,6 +21,19 @@ ALGORITMO: Monte Carlo Greedy (T = 0 K)
     · la nueva posición permanece en el dominio [-L, L]²
     · la energía total DISMINUYE (U_nueva < U_actual)
 
+  Nota: este algoritmo encuentra MÍNIMOS LOCALES, no el mínimo
+  global. La solución final depende de las condiciones iniciales.
+
+REGULARIZACIÓN — EXCLUSIÓN DE VOLUMEN DURO:
+  El potencial de Coulomb 1/r diverge cuando r → 0. Sin una
+  distancia mínima entre cargas, pares opuestos (+/−) atraídos
+  caerían a r = 0, haciendo U → −∞ y el algoritmo diverge.
+  Se introduce R_MIN = 2·R_CARGA como radio de exclusión:
+    · Dos cargas nunca pueden acercarse a menos de R_MIN.
+    · Modela cargas como esferas físicas de radio R_CARGA.
+    · Permite que pares opuestos se "toquen" (d → R_MIN) sin
+      colapsar, reproduciendo el comportamiento físico real.
+
 CARACTERÍSTICAS:
   · Entrada interactiva del número de cargas (+/−)
   · Agregar y eliminar cargas en tiempo de ejecución
@@ -53,7 +66,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 K_E        = 1.0          # Constante de Coulomb (unidades naturales)
 L          = 100.0        # Semilado del dominio → dominio = [-L, L]²
 DOMAIN     = (-L, L)      # Tupla del dominio
-DELTA      = 5.0          # Desplazamiento máximo por iteración [u.a.]
+DELTA      = 3.0          # Desplazamiento máximo por iteración [u.a.]
 N_ITER_DEF = 30_000       # Iteraciones por defecto
 GRID_SIZE  = 200          # Resolución de malla para visualización (200×200)
 MAX_CARGAS = 200          # Máximo de cargas simultáneas
@@ -64,7 +77,7 @@ GIF_V         = str(OUT_DIR / 'video_potencial.gif')   # GIF: mapa de calor V(x,
 GIF_E         = str(OUT_DIR / 'video_campo.gif')       # GIF: magnitud |E| + flechas
 GIF_DPI       = 72                     # DPI de cada frame en memoria
 GIF_SIZE      = (4.0, 4.0)            # Tamaño de figura en pulgadas
-GIF_GRID      = 28                     # Resolucion de malla en frames
+GIF_GRID      = 60                     # Resolucion de malla en frames
 GIF_MAX_FRAMES = 150                   # Frames maximos por GIF (submuestreo si excede)
 
 
@@ -614,8 +627,10 @@ def _dibujar_cargas(ax, posiciones: np.ndarray, cargas: np.ndarray,
                          linewidth=0.8, alpha=alpha, zorder=5)
         ax.add_patch(circ)
         signo = '+' if q > 0 else '−'
+        # Tamaño de fuente proporcional a la fracción del dominio que ocupa el radio
+        fs = max(4, int(r / (2 * L) * 500))
         ax.text(xi, yi, signo, ha='center', va='center',
-                fontsize=max(4, int(r * 28)), color='white',
+                fontsize=fs, color='white',
                 fontweight='bold', zorder=6, alpha=alpha)
 
 
@@ -770,7 +785,7 @@ def _frame_campo(posiciones: np.ndarray, cargas: np.ndarray,
     ax.quiver(X[::sk, ::sk], Y[::sk, ::sk],
               Ex[::sk, ::sk] / En[::sk, ::sk],
               Ey[::sk, ::sk] / En[::sk, ::sk],
-              color='white', alpha=0.42, scale=52, width=0.004)
+              color='white', alpha=0.42, scale=3, width=0.004)
 
     _dibujar_cargas(ax, posiciones, cargas, radio=R_DIBUJO_PNG)
 
@@ -864,16 +879,20 @@ def comparar_semillas(n_pos: int, n_neg: int,
                        n_iter: int = 600,
                        seeds: tuple = (7, 42, 123)) -> list:
     """
-    Ejecuta la minimización con distintas semillas iniciales
-    para comparar la distribución de energías aceptadas y
-    analizar la dependencia con las condiciones iniciales.
+    Ejecuta la minimización con distintas condiciones iniciales ALEATORIAS
+    (una configuracion espacial diferente por semilla) para comparar la
+    distribucion de energias aceptadas y analizar la dependencia con las
+    condiciones iniciales — como pide la especificacion del proyecto.
+
+    Cada semilla genera posiciones iniciales DISTINTAS (no solo trayectorias
+    MC distintas), lo que produce histogramas verdaderamente diferentes.
 
     Retorna lista de dicts con resultados por semilla.
     """
     resultados = []
     for s in seeds:
-        np.random.seed(s)
-        sys_tmp = SistemaCargas(pos_ext=POS_FIJAS, q_ext=Q_FIJAS, seed=s)
+        # Cada semilla genera una configuracion espacial inicial distinta
+        sys_tmp = SistemaCargas(n_pos=n_pos, n_neg=n_neg, seed=s)
         res = minimizar_energia(sys_tmp, n_iter=n_iter,
                                 delta=DELTA, verbose=False)
         resultados.append({'seed': s, **res})
@@ -1017,11 +1036,13 @@ def visualizar_estado_completo(sistema: SistemaCargas,
     ax2.contour(X, Y, V_clip, levels=12, colors='white', alpha=0.10, linewidths=0.3)
     _colorbar(fig, cf2, ax2, 'V [u.a.]')
 
-    # Circulos fisicos + etiqueta de V en cada carga
+    # Circulos fisicos + etiqueta de V en las 10 cargas con mayor |V|
     _dibujar_cargas(ax2, pos, q, radio=R_DIBUJO_PNG)
-    for i, (xi, yi) in enumerate(pos):
-        Vi = V_en_carga(i, pos, q)
-        ax2.annotate(f'{Vi:.1f}', (xi, yi + R_DIBUJO_PNG), fontsize=6,
+    Vs_all = np.array([V_en_carga(i, pos, q) for i in range(len(q))])
+    top10_V = np.argsort(np.abs(Vs_all))[-10:]
+    for i in top10_V:
+        xi, yi = pos[i]
+        ax2.annotate(f'{Vs_all[i]:.1f}', (xi, yi + R_DIBUJO_PNG), fontsize=6,
                      color='#facc15', ha='center', va='bottom',
                      xytext=(0, 2), textcoords='offset points')
 
@@ -1036,7 +1057,7 @@ def visualizar_estado_completo(sistema: SistemaCargas,
     ax3 = fig.add_subplot(gs[0, 2])
     _estilo(ax3, 'Campo Electrico  |E(x, y)|  +  direccion')
 
-    nq = 26
+    nq = 60
     xq = np.linspace(DOMAIN[0], DOMAIN[1], nq)
     yq = np.linspace(DOMAIN[0], DOMAIN[1], nq)
     Xq, Yq = np.meshgrid(xq, yq)
@@ -1053,13 +1074,15 @@ def visualizar_estado_completo(sistema: SistemaCargas,
     ax3.quiver(Xq[::sk, ::sk], Yq[::sk, ::sk],
                Ex[::sk, ::sk] / En[::sk, ::sk],
                Ey[::sk, ::sk] / En[::sk, ::sk],
-               color='white', alpha=0.3, scale=48, width=0.003)
+               color='white', alpha=0.3, scale=3, width=0.003)
 
-    # Circulos fisicos + etiqueta de |E| en cada carga
+    # Circulos fisicos + etiqueta de |E| en las 10 cargas con mayor campo
     _dibujar_cargas(ax3, pos, q, radio=R_DIBUJO_PNG)
-    for i, (xi, yi) in enumerate(pos):
-        Ei = E_en_carga(i, pos, q)
-        ax3.annotate(f'{Ei:.1f}', (xi, yi + R_DIBUJO_PNG), fontsize=6,
+    Es_all = np.array([E_en_carga(i, pos, q) for i in range(len(q))])
+    top10_E = np.argsort(Es_all)[-10:]
+    for i in top10_E:
+        xi, yi = pos[i]
+        ax3.annotate(f'{Es_all[i]:.1f}', (xi, yi + R_DIBUJO_PNG), fontsize=6,
                      color='#facc15', ha='center', va='bottom',
                      xytext=(0, 2), textcoords='offset points')
 
@@ -1155,10 +1178,13 @@ def visualizar_estado_completo(sistema: SistemaCargas,
     cb6.ax.tick_params(colors='#aaaaaa', labelsize=8)
 
     if len(d_ac) > 3:
-        coef = np.polyfit(d_ac, U_ac, 1)
-        dx   = np.linspace(d_ac.min(), d_ac.max(), 200)
-        ax6.plot(dx, np.polyval(coef, dx), '--',
-                 color='#facc15', lw=1.6, alpha=0.9, label='Tendencia lineal')
+        # Ajuste U ~ a/d + b (Coulomb escala como 1/r, no lineal)
+        inv_d = 1.0 / np.maximum(d_ac, 1e-12)
+        coef  = np.polyfit(inv_d, U_ac, 1)        # lineal en 1/d
+        dx    = np.linspace(d_ac.min(), d_ac.max(), 200)
+        ax6.plot(dx, np.polyval(coef, 1.0 / dx), '--',
+                 color='#facc15', lw=1.6, alpha=0.9,
+                 label=f'Ajuste U ~ a/d + b')
         lg6 = ax6.legend(fontsize=8, facecolor='#1e3a5f', edgecolor='#334155')
         for t in lg6.get_texts():
             t.set_color('white')
@@ -1281,7 +1307,7 @@ def visualizar_analisis_avanzado(sistema: SistemaCargas,
                           levels=60, cmap='RdBu_r', alpha=0.88)
     _colorbar(fig, cf3, ax3, 'V [u.a.]')
 
-    ns  = 28
+    ns  = 60
     xs  = np.linspace(DOMAIN[0], DOMAIN[1], ns)
     ys  = np.linspace(DOMAIN[0], DOMAIN[1], ns)
     Xs, Ys = np.meshgrid(xs, ys)
@@ -1371,6 +1397,28 @@ def configurar_sistema_inicial() -> 'SistemaCargas':
     return sistema
 
 
+def configurar_sistema_aleatorio(n_pos: int = 25, n_neg: int = 25,
+                                  seed: int = None) -> 'SistemaCargas':
+    """
+    Crea el sistema con posiciones iniciales ALEATORIAS.
+    Cumple con la especificacion del proyecto: 'posiciones iniciales aleatorias'.
+    Las cargas se colocan por muestreo de rechazo respetando R_MIN.
+    """
+    if seed is None:
+        seed = np.random.randint(0, 10_000)
+    sistema = SistemaCargas(n_pos=n_pos, n_neg=n_neg, seed=seed)
+    print(f"\n  {'═'*52}")
+    print("  SISTEMA ALEATORIO (posiciones iniciales aleatorias)")
+    print(f"  {'═'*52}")
+    print(f"  Semilla: {seed}")
+    print(f"  {sistema.n_pos} cargas (+1)  +  {sistema.n_neg} cargas (−1)"
+          f"  =  {sistema.N} cargas")
+    print(f"  Dominio: [{DOMAIN[0]}, {DOMAIN[1]}]²")
+    print(f"  U inicial = {sistema.energia:+.4f} u.a.")
+    print(f"  {'═'*52}")
+    return sistema
+
+
 def _submenu_agregar(sistema: SistemaCargas) -> None:
     disp = MAX_CARGAS - sistema.N
     if disp <= 0:
@@ -1440,7 +1488,8 @@ def _submenu_simular(sistema: SistemaCargas) -> dict:
     if gen_gifs:
         print("  Se generaran 3 GIFs al finalizar (sin archivos PNG intermedios).")
 
-    print(f"\n  Ejecutando minimizacion: {n_iter} iter | delta={DELTA}...")
+    print(f"\n  Ejecutando minimizacion: {n_iter} iter | delta={DELTA} | "
+          f"R_MIN={R_MIN} | EPS={EPS}...")
     res = minimizar_energia(sistema, n_iter=n_iter, delta=DELTA,
                              guardar_frames=gen_gifs, verbose=True)
 
@@ -1448,15 +1497,57 @@ def _submenu_simular(sistema: SistemaCargas) -> dict:
     Uf  = res['U_historial'][-1]
     dU  = Uf - U0
     pct = 100 * dU / (abs(U0) + 1e-12)
+    d0  = res['dist_prom_acept'][0]
+    df  = res['dist_prom_acept'][-1]
+
+    # Verificacion de conservacion numerica
+    U_calc = calcular_energia(sistema.posiciones, sistema.cargas)
+    err_conserv = abs(Uf - U_calc)
+
     print(f"\n  {'─'*50}")
     print(f"  Energia inicial U0   : {U0:+.6f}  u.a.")
     print(f"  Energia final  Uf    : {Uf:+.6f}  u.a.")
     print(f"  Reduccion DU         : {dU:+.6f}  u.a.  ({pct:+.2f}%)")
+    print(f"  Dist. prom. inicial  : {d0:.4f}  u.a.")
+    print(f"  Dist. prom. final    : {df:.4f}  u.a.")
     print(f"  Movim. aceptados     : {res['n_aceptados']}/{n_iter}"
           f"  ({100*res['tasa_aceptacion']:.1f}%)")
+    print(f"  Verificacion U       : |U_acum − U_calc| = {err_conserv:.2e}  u.a."
+          + ("  ✓" if err_conserv < 1e-6 else "  ✗ (posible error numerico)"))
     if res.get('gifs'):
         print(f"  GIFs generados       : {', '.join(res['gifs'])}")
     print(f"  {'─'*50}")
+
+    # Escribir resumen en disco para uso en conclusiones
+    resumen_path = OUT_DIR / 'resumen.txt'
+    with open(resumen_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 54 + "\n")
+        f.write("RESUMEN DE SIMULACION — ENERGIA ELECTROSTATICA 2D\n")
+        f.write("=" * 54 + "\n\n")
+        f.write(f"Parametros del sistema:\n")
+        f.write(f"  N total        : {sistema.N}\n")
+        f.write(f"  Cargas (+1)    : {sistema.n_pos}\n")
+        f.write(f"  Cargas (-1)    : {sistema.n_neg}\n")
+        f.write(f"  Dominio        : [{DOMAIN[0]}, {DOMAIN[1]}]^2\n")
+        f.write(f"  L              : {L}\n")
+        f.write(f"  DELTA          : {DELTA}\n")
+        f.write(f"  R_MIN          : {R_MIN}\n")
+        f.write(f"  EPS            : {EPS}\n")
+        f.write(f"  Iteraciones    : {n_iter}\n\n")
+        f.write(f"Resultados energeticos:\n")
+        f.write(f"  U inicial U0   : {U0:+.6f} u.a.\n")
+        f.write(f"  U final   Uf   : {Uf:+.6f} u.a.\n")
+        f.write(f"  DeltaU         : {dU:+.6f} u.a.  ({pct:+.2f}%)\n\n")
+        f.write(f"Analisis geometrico:\n")
+        f.write(f"  Dist. prom. inicial : {d0:.4f} u.a.\n")
+        f.write(f"  Dist. prom. final   : {df:.4f} u.a.\n\n")
+        f.write(f"Estadisticas MC:\n")
+        f.write(f"  Movimientos aceptados : {res['n_aceptados']}/{n_iter}"
+                f"  ({100*res['tasa_aceptacion']:.2f}%)\n\n")
+        f.write(f"Verificacion numerica:\n")
+        f.write(f"  |U_acumulada - U_recalculada| = {err_conserv:.2e} u.a.\n")
+        f.write(f"  {'OK' if err_conserv < 1e-6 else 'ADVERTENCIA: error mayor al esperado'}\n")
+    print(f"  Resumen guardado  -> {resumen_path}")
 
     return res
 
@@ -1471,7 +1562,15 @@ def main() -> None:
     print(f"  Dominio [-{int(L)},{int(L)}]^2 | 25(+) + 25(-) = 50 cargas | delta={DELTA}")
     print("═"*56)
 
-    sistema   = configurar_sistema_inicial()
+    print("\n  Modo de inicializacion:")
+    print("  1. Coordenadas fijas de presentacion (clusters separados)")
+    print("  2. Posiciones iniciales ALEATORIAS (segun especificacion)")
+    modo_ini = _leer_int("Modo", lo=1, hi=2, default=2)
+    if modo_ini == 2:
+        seed_ini = _leer_int("Semilla aleatoria (0-9999)", lo=0, hi=9999, default=42)
+        sistema = configurar_sistema_aleatorio(seed=seed_ini)
+    else:
+        sistema = configurar_sistema_inicial()
     resultado = None
 
     while True:
@@ -1530,7 +1629,15 @@ def main() -> None:
         elif opc == 8:
             if _leer_yn("Reiniciar sistema (se perdera el estado actual)",
                          default=False):
-                sistema   = configurar_sistema_inicial()
+                print("  Modo de reinicio:")
+                print("  1. Coordenadas fijas de presentacion")
+                print("  2. Posiciones iniciales ALEATORIAS")
+                modo_r = _leer_int("Modo", lo=1, hi=2, default=2)
+                if modo_r == 2:
+                    seed_r = _leer_int("Semilla (0-9999)", lo=0, hi=9999, default=42)
+                    sistema = configurar_sistema_aleatorio(seed=seed_r)
+                else:
+                    sistema = configurar_sistema_inicial()
                 resultado = None
 
         elif opc == 9:
